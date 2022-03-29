@@ -1,0 +1,518 @@
+options
+{
+	LOOKAHEAD = 1; //we can use LOOKAHEAD=2, BUT THERE MAY BE PROBLEMS WITH THE	 "FORCE_LA_CHECK", WHICH SEEMS TO GIVE AN ERROR REGARDLESS THE USE OF THE LOOKAHEAD >1 OPTION
+	FORCE_LA_CHECK = false;
+	CHOICE_AMBIGUITY_CHECK = 2;
+	OTHER_AMBIGUITY_CHECK = 1;
+	DEBUG_PARSER = false;
+	
+	TRACK_TOKENS = true;
+	TOKEN_EXTENDS = "progen.Entity";
+	
+	NODE_CLASS = "progen.ProgenNode";
+	NODE_EXTENDS = "progen.Entity";
+
+	MULTI = true;
+	VISITOR = true;
+	NODE_DEFAULT_VOID = true;
+}
+
+PARSER_BEGIN(MiniJava)
+package minijavaparser; 
+ 
+import java.io.*;
+
+public class MiniJava
+{	
+	public static void main(String args[]) 
+	{
+	    System.err.println("Reading from standard input...");
+	    try 
+	    {
+	      	MiniJava p = new MiniJava(new FileInputStream(new File("./samples/test01.java")));
+	    	ASTProgram root = p.Program();
+	    	root.dump(">");
+			System.out.println("Thank you.");
+	    } 
+	    catch (Exception e) 
+	    {									      
+			System.err.println("Oops.");
+			System.err.println(e.getMessage());
+			e.printStackTrace();
+	    }
+	}
+}
+
+PARSER_END(MiniJava)
+
+SKIP :
+{
+  " "
+| "\t"
+| "\n"
+| "\r"
+| < SINGLE_COMMENT: "//" (~["\r","\n"])* >
+| < MULTI_COMMENT: "/*" (~["*"])* "*" (~["/"] (~["*"])* "*")* "/" >
+}
+
+TOKEN : /* KEYWORDS */
+{
+  <CLASS: "class">
+| <PUBLIC: "public">
+| <STATIC: "static">
+| <VOID: "void">
+| <MAIN: "main">
+| <STRING: "String">
+| <EXTENDS: "extends">
+| <IF: "if">
+| <ELSE: "else">
+| <WHILE: "while">
+| <PRINTLN: "System.out.println">
+| <RETURN: "return">
+| < INT_ARR:"int[]" >
+| <INT: "int">
+| <BOOLEAN: "boolean">
+| <LENGTH: "length">
+| <TRUE: "true">
+| <FALSE: "false">
+| <THIS: "this">
+| <NEW: "new">
+} 
+
+TOKEN : /* IDENTIFIERS */
+{
+  < ID: <LETTER> (<LETTER>|<DIGIT>)* >
+|
+  < INTEGER_LITERAL: (< DIGIT >)+ >
+|
+  < #LETTER: ["_","a"-"z","A"-"Z"] >
+|
+  < #DIGIT: ["0"-"9"] >
+}
+
+TOKEN : /* OPERATORS */
+{
+  < ADD: "+" >
+| < SUB: "-" >
+| < MUL: "*" >
+| < DIV: "/" >
+| < GT: ">" >
+| < GE: ">=" >
+| < LT: "<" >
+| < LE: "<=" >
+| < EQ: "==" >
+| < NE: "!=" >
+| < NOT: "!" >
+| < AND: "&&" >
+| < OR: "||" >
+}
+
+TOKEN : /* SEPARATORS */
+{
+  <LBRACKET: "[">
+| <RBRACKET: "]"> 
+| <LPAREN: "(">
+| <RPAREN: ")">
+| <LACCOLADE: "{">
+| <RACCOLADE: "}">
+| <COMMA: ",">
+| <SEMICOLON: ";">
+| <DOT: "." >
+| <ATRIB: "=" >
+}
+
+TOKEN: //SPECIAL
+{
+  <NONE: ~[] >
+}
+
+ASTProgram Program() #Program:
+{
+  }
+{
+	MainClass() ( ClassDecl() )* <EOF>
+  	{
+  		return jjtThis; 
+  	}
+}
+
+void MainClass() #MainClass:
+{
+  Token name;
+}
+{ 
+	< CLASS > name = < ID > "{"  MainFuncDecl() "}"
+	{
+		jjtThis.jjtSetValue(name);
+	}
+}
+
+void MainFuncDecl() #MainFuncDecl:
+{ Token t;
+}
+{
+	< PUBLIC > < STATIC > < VOID > < MAIN > "(" < STRING > "[" "]" t=< ID > ")" "{"  Statement() "}"
+	{ jjtThis.jjtSetValue(t); }
+}
+
+void  ClassDecl() #ClassDecl:
+{ Token name, extend = null;
+}
+{
+//  LOOKAHEAD(3)
+//	< CLASS > < ID > [] "{" (VarDecl())*  (MethodDecl())* "}"
+//| 	< CLASS > < ID > < EXTENDS > < ID > "{" (VarDecl())*  (MethodDecl())* "}"
+	< CLASS > name  = < ID > [< EXTENDS > extend = < ID >] "{" (VarDecl())*  (MethodDecl())* "}"
+	{
+	  if(extend == null)
+	  	jjtThis.jjtSetValue(new Token[] { name });
+	  else
+	  	jjtThis.jjtSetValue(new Token[] { name, extend });
+	 }
+}
+
+void VarDecl() #VarDecl:
+{
+  Token name;
+}
+{
+	Type() name = < ID > ";"
+	{
+
+		jjtThis.jjtSetValue(name);
+	}
+}
+
+void MethodDecl() #MethodDecl:
+{
+  Token name;
+}
+{
+	"public" Type() name = < ID > "(" (FormalList())? ")" //original orice functie trebuie sa ia parametrii = > pt proiectul meu am schimbat sa pot avea si functii fara param
+	"{" (LOOKAHEAD(2)VarDecl())* (Statement())* < RETURN > Exp() ";" "}"
+	{
+		jjtThis.jjtSetValue(name);
+	}
+}
+
+void FormalList()#FormalList:
+{
+  Token name;
+}
+{
+	Type() name = < ID > (FormalRest())*
+	{ jjtThis.jjtSetValue(name); }
+//| 	< NONE > //doesn't work very well
+}
+
+void FormalRest()#FormalRest:
+{
+  Token name;
+}
+{
+	< COMMA > Type() name = < ID >
+	{ jjtThis.jjtSetValue(name); }
+}
+
+void Type()#Type:
+{
+  Token type;
+}
+{
+	type = < INT_ARR > {jjtThis.jjtSetValue(type);}
+| 	type = < INT > {jjtThis.jjtSetValue(type);}
+| 	type = < BOOLEAN > {jjtThis.jjtSetValue(type);}
+| 	type = < ID > {jjtThis.jjtSetValue(type);}
+}
+
+void Statement()#Statement:
+{Token t;}
+{
+	"{" (Statement())* "}"
+|	t=< IF > "(" Exp() ")" Statement() < ELSE > Statement() { jjtThis.jjtSetValue(t); }
+| 	t=< WHILE > "(" Exp() ")" Statement() { jjtThis.jjtSetValue(t); }
+|	t=< PRINTLN > "(" Exp() ")" ";" { jjtThis.jjtSetValue(t); }
+| 	LOOKAHEAD(2)
+	t=< ID > "[" ArExp() "]" "=" ArExp() ";" { jjtThis.jjtSetValue(new Object[] { t, true }); }
+|	LOOKAHEAD(2)
+	t=< ID >  "=" Exp() ";" { jjtThis.jjtSetValue(new Object[] { t, false }); }
+| 	Exp() ";" { jjtThis.jjtSetValue("Exp"); } // if we do not have id=fun(), only fun()
+}
+
+void Exp()#void: 
+{}
+{
+   Cond()
+}
+
+void Cond() #void:
+{ }
+{
+	OrCond()
+}
+
+void OrCond() #OrCond:
+{Token t =  null;}
+{
+	AndCond() (t = < OR > AndCond())* { jjtThis.jjtSetValue(t); } //if we have at least one OR, then we have a value, else null
+}
+
+void AndCond() #AndCond:
+{Token t =  null;}
+{
+	LogFactor() (t = < AND > LogFactor())* { jjtThis.jjtSetValue(t); } //if we have at least one AND, then we have a value, else null
+}
+
+void LogFactor() #void:
+{}
+{
+    RelExp()
+}
+
+void RelExp() #RelExp:
+{ }
+{
+	ArExp() (RelOp() ArExp())?
+}
+
+void RelOp()#RelOp:
+{ Token t; }
+{
+  ( t=< LT >
+| 	t=< LE >
+| 	t=< GT >
+| 	t=< GE >
+| 	t=< EQ >
+| 	t=< NE >) { jjtThis.jjtSetValue(t); }
+}
+
+void ArExp()#ArExp:
+{ }
+{
+	MulExp() (AdOp() MulExp())*
+
+}
+
+void AdOp()#AdOp:
+{ Token t; }
+{
+	t = < ADD > { jjtThis.jjtSetValue(t); }
+|	t = < SUB > { jjtThis.jjtSetValue(t); }
+}
+
+void MulExp()#Term:
+{ }
+{
+	Factor() (MulOp() Factor())*	
+}
+
+void MulOp()#MulOp:
+{ Token t; }
+{
+	t = < MUL > { jjtThis.jjtSetValue(t); }
+| 	t = < DIV > { jjtThis.jjtSetValue(t); }
+}
+
+void Factor()#Factor:
+{ Token t; }
+{
+ 	t = < INTEGER_LITERAL > { jjtThis.jjtSetValue(t); }
+| 	t = < TRUE > { jjtThis.jjtSetValue(t); }
+| 	t = < FALSE > { jjtThis.jjtSetValue(t); }
+| 	Subfactor() (LOOKAHEAD(2) FactorP())*   //am primit eroare fara lookahead aici, desi am in FactorP lookahead oricum
+}
+
+void FactorP()#FactorRest:
+{ Token t; }
+{
+  	LOOKAHEAD(2)
+	"." t = < ID > "(" (ExpList())? ")" { jjtThis.jjtSetValue(new Object[] { "CallOp", t }); }
+| 	t = "." < LENGTH >  { jjtThis.jjtSetValue(new Object[] { "length", t }); }
+| 	t = "[" Exp() "]"  { jjtThis.jjtSetValue(new Object[] { "indexed", t }); }
+}
+ 
+void Subfactor()#ExpFinal:
+{Token t;}
+{
+  	t = < THIS > { jjtThis.jjtSetValue(new Object[] { "This", t }); }
+|  	t = < ID > { jjtThis.jjtSetValue(new Object[] { "Object", t }); }
+| 	LOOKAHEAD(2)
+	< NEW > t = < INT > "[" Exp() "]" { jjtThis.jjtSetValue(new Object[] { "New Op", t }); }
+| 	< NEW > t = < ID > "(" ")" { jjtThis.jjtSetValue(new Object[] { "New Op", t }); }
+| 	"(" Exp() t = ")" { jjtThis.jjtSetValue(new Object[] {"Subexpression", t }); }
+|   t = < NOT > Factor() { jjtThis.jjtSetValue(new Object[] { "Not Op", t}); }
+}
+
+void ExpList()#ExpList:
+{}
+{
+	Exp() ("," Exp())*
+//| 	< NONE > //doesn't work 
+}
+
+
+/* grammar
+1. gramatica implementata
+    Program ::= MainClass ClassDecl*
+
+  MainClass ::= class id { public static void main ( String [] id )
+               { Statement }}
+
+  ClassDecl ::= class id [extends id] { VarDecl* MethodDecl* }
+
+    VarDecl ::= Type id ;
+
+ MethodDecl ::= public Type id ( FormalList? )
+               { VarDecl* Statement* return Exp ;}
+
+ FormalList ::= Type id FormalRest*
+           	---::=---
+
+ FormalRest ::=, Type id
+
+       Type ::= int []
+           	::= boolean
+           	::= int
+           	::= id
+
+  Statement ::= { Statement* }
+           	::= if ( Exp ) Statement else Statement
+           	::= while ( Exp ) Statement
+           	::= System.out.println ( Exp ) ;
+           	::= id = Exp ;
+           	::= id [ ArExp ]= ArExp ;
+           	::= Exp ; //added in order to call a function and ignore the result
+
+		Exp ::= Condition
+
+  Condition ::= OrCond
+
+	 OrCond ::= AndCond ("||" AndCond)*
+
+ 	AndCond ::= LogFactor ("&&" LogFactor)*
+
+  LogFactor ::= RelExp
+
+	 RelExp ::= ArExp RelOp ArExp
+
+	  RelOp ::= < | > | < = | >= | == | !=
+
+	  ArExp ::= Term (AdOp Term)*
+
+	   AdOp ::= "+" | "-"
+
+	   Term ::= Factor (MulOp Factor)*
+
+	  MulOp ::= "*" | "/"
+
+	 Factor ::= AtFact Rest*
+	 		::= INTEGER LITERAL //l-am pus in factor pt ca nu poate fi urmat de nimic, spre deosebire the this sau id
+	 		::= "true" | "false"
+
+	   Rest ::= "." id "(" ExpList? ")"
+			::= "." "length"
+			::= "[" Exp "]"
+
+	 AtFact ::= id | this 
+	 		::= "new" "int" "[" Exp " ]"
+	  		::= "new" "id" "(" ")"
+	 		::= "(" Exp ")"
+	 		::= "!" Factor
+
+	ExpList ::= Exp ("," Exp)*
+           	---::=    //epsilon---
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2. gramatica primita
+   Program ::= MainClass ClassDecl*
+
+ MainClass ::= class id { public static void main ( String [] id )
+               { Statement }}
+
+ ClassDecl ::= class id { VarDecl* MethodDecl* }
+           ::= class id extends id { VarDecl* MethodDecl* }
+
+   VarDecl ::= Type id ;
+
+MethodDecl ::= public Type id ( FormalList )
+               { VarDecl* Statement* return Exp ;}
+
+FormalList ::= Type id FormalRest*
+           ::=
+
+FormalRest ::=, Type id
+
+      Type ::= int []
+           ::= boolean
+           ::= int
+           ::= id
+
+ Statement ::= { Statement* }
+           ::= if ( Exp ) Statement else Statement
+           ::= while ( Exp ) Statement
+           ::= System.out.println ( Exp ) ;
+           ::= id = Exp ;
+           ::= id [ Exp ]= Exp ;
+
+       Exp - ::= Exp op Exp
+           ::= Exp [ Exp ]
+           ::= Exp . length
+           ::= Exp . id ( ExpList )
+           - ::= INTEGER LITERAL
+           - ::= true
+           - ::= false
+           - ::= id
+           - ::= this
+           - ::= new int [ Exp ]
+           - ::= new id ()
+           - ::= ! Exp
+           - ::= ( Exp )
+
+   ExpList ::= Exp ExpRest*
+           ::=
+
+  ExpRest  ::=  ,Exp
+
+
+-------------------------------------------------- expressions----------------------------------------------
+
+Exp ::= Condition
+
+Condition ::= LogExp | "!" LogExp
+
+LogExp ::= LogExpTerm ("||" LogExpTerm)*
+
+LogExpTerm ::= LogExpFactor ("&&" LogExpFactor)*
+
+LogExpFactor ::= "(" LogExp ")" | RelExp | "true" | "false"
+
+RelExp ::= ArExp RelOp ArExp | ArExp  - > ArExp (RelOp ArExp)*
+
+RelOp ::= <  | > | < = | >= | == | !=
+
+ArExp ::= ArExp + Term | ArExp - Term | Term   -> Term ([+|-] Term)*
+
+Term ::= Term '*' Factor | Term '/' Factor | Factor -> Factor ([*|/] Factor)*
+
+Factor ::= id | this | OpNew | "(" ArExp ")" | INTEGER LITERAL | Exp "." Exp "(" ExpList ")" | Exp "." "length" | Exp "[" Exp "]"
+
+OpNew ::= "new" "int" "[" Exp " ]"
+	  ::= "new" "id" "(" ")"
+	  
+   ExpList ::= Exp ExpRest*
+           ::=
+
+  ExpRest  ::=  ,Exp
+
+simplificare:
+
+- elimin Condition
+"(" LogExp ")" si "(" ArExp ")" pot intra in conflict (explicat mai jos)
+	exp - > cond - > logExp - > LegExpTerm - > LogExpFactor- > "(" LogExp ")" - > "(" LogExpTerm ")" - > "(" LogExpFactor ")" - > "(" RelExp ")" - > "(" ArExp ")" - > ...
+	exp - > cond - > logExp - > LegExpTerm - > LogExpFactor- > RelExp -> ArExp - > Term - > Factor - > "(" ArExp ")" - > ...
+
+
+LogTerm.'!'Cond() - > Term.'!'Term pentru ca genera o eroare de expandare ! x & y se putea expanda ca (!x) & y, dar si incorect !(x & y)
+
+*/
